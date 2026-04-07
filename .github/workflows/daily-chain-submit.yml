@@ -1,0 +1,30 @@
+name: Daily Chain Submit
+
+on:
+  schedule:
+    - cron: "10 0 * * *"
+  workflow_dispatch:
+
+jobs:
+  submit:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Submit daily snapshot to Elysium
+        env:
+          VF_SITE_URL: ${{ secrets.VF_SITE_URL }}
+          VF_SITE_TOKEN: ${{ secrets.VF_SITE_TOKEN }}
+          ELY_PRIVATE_KEY: ${{ secrets.ELY_PRIVATE_KEY }}
+          ELY_RPC_URL: ${{ secrets.ELY_RPC_URL }}
+        run: node submit-daily.js
