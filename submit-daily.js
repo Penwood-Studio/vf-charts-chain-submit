@@ -6,15 +6,33 @@ async function main() {
   const rpcUrl = process.env.ELY_RPC_URL;
   const privateKey = process.env.ELY_PRIVATE_KEY;
 
+  console.log("Starting daily chain submit...");
+  console.log("VF_SITE_URL set:", !!siteUrl);
+  console.log("VF_SITE_TOKEN set:", !!token);
+  console.log("ELY_RPC_URL set:", !!rpcUrl);
+  console.log("ELY_PRIVATE_KEY set:", !!privateKey);
+
   if (!siteUrl || !token || !rpcUrl || !privateKey) {
     throw new Error("Missing required environment variables");
   }
 
-  const snapshotRes = await fetch(
-    `${siteUrl}/wp-json/vf-charts/v1/github/daily-snapshot?token=${encodeURIComponent(token)}`
-  );
+  const snapshotUrl =
+    `${siteUrl}/wp-json/vf-charts/v1/github/daily-snapshot?token=${encodeURIComponent(token)}`;
 
-  const snapshotData = await snapshotRes.json();
+  console.log("Fetching snapshot from:", snapshotUrl.replace(token, "[REDACTED]"));
+
+  const snapshotRes = await fetch(snapshotUrl);
+  const snapshotText = await snapshotRes.text();
+
+  console.log("Snapshot HTTP status:", snapshotRes.status);
+  console.log("Snapshot raw response:", snapshotText);
+
+  let snapshotData;
+  try {
+    snapshotData = JSON.parse(snapshotText);
+  } catch (err) {
+    throw new Error("Snapshot endpoint did not return valid JSON");
+  }
 
   if (!snapshotData.ok) {
     throw new Error(`Snapshot fetch failed: ${JSON.stringify(snapshotData)}`);
@@ -28,6 +46,8 @@ async function main() {
   const provider = new ethers.JsonRpcProvider(rpcUrl);
   const wallet = new ethers.Wallet(privateKey, provider);
 
+  console.log("Using wallet address:", wallet.address);
+
   const tx = await wallet.sendTransaction({
     to: wallet.address,
     value: 0n,
@@ -37,22 +57,33 @@ async function main() {
   console.log(`Submitted tx: ${tx.hash}`);
 
   await tx.wait();
+  console.log("Transaction confirmed");
 
-  const markRes = await fetch(
-    `${siteUrl}/wp-json/vf-charts/v1/github/mark-submitted?token=${encodeURIComponent(token)}`,
-    {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify({
-        snapshot_id: snapshotData.snapshot_id,
-        tx_hash: tx.hash
-      })
-    }
-  );
+  const markUrl =
+    `${siteUrl}/wp-json/vf-charts/v1/github/mark-submitted?token=${encodeURIComponent(token)}`;
 
-  const markData = await markRes.json();
+  const markRes = await fetch(markUrl, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({
+      snapshot_id: snapshotData.snapshot_id,
+      tx_hash: tx.hash
+    })
+  });
+
+  const markText = await markRes.text();
+
+  console.log("Mark-submitted HTTP status:", markRes.status);
+  console.log("Mark-submitted raw response:", markText);
+
+  let markData;
+  try {
+    markData = JSON.parse(markText);
+  } catch (err) {
+    throw new Error("Mark-submitted endpoint did not return valid JSON");
+  }
 
   if (!markData.ok) {
     throw new Error(`Mark-submitted failed: ${JSON.stringify(markData)}`);
@@ -62,6 +93,7 @@ async function main() {
 }
 
 main().catch((err) => {
+  console.error("Workflow failed:");
   console.error(err);
   process.exit(1);
 });
